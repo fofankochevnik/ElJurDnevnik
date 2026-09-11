@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+            <certificates src="@raw/globalsign_root_r46" />
+            <certificates src="@raw/globalsign_intermediate_r46" />
+            <certificates src="@raw/russian_trusted_root_ca" />
+            <certificates src="@raw/russian_trusted_sub_ca" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">schools48.ru</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+            <certificates src="@raw/globalsign_root_r46" />
+            <certificates src="@raw/globalsign_intermediate_r46" />
+            <certificates src="@raw/russian_trusted_root_ca" />
+            <certificates src="@raw/russian_trusted_sub_ca" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

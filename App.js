@@ -6,9 +6,10 @@ import {
   ScrollView, 
   TouchableOpacity, 
   Modal, 
-  TextInput,
-  ActivityIndicator,
-  RefreshControl
+  TextInput, 
+  ActivityIndicator, 
+  RefreshControl,
+  StatusBar
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -18,13 +19,28 @@ const STUDENT_ID = '1781';
 const DEV_KEY = '6566345ff2850c724676decefe5c2117';
 const VENDOR = 'lpsk1733844979';
 
-// Neumorphism colors
-const bg = '#e0e5ec';
-const lightShadow = '#ffffff';
-const darkShadow = '#a3b1c6';
-const textDark = '#4a5568';
-const textLight = '#718096';
-const accent = '#667eea';
+// Material Design 3 — Dark Minimalist Grey Theme (Reference: Serpantinum)
+const m3 = {
+  surface: '#111314',
+  surfaceContainerLow: '#171a1b',
+  surfaceContainer: '#1e2223',
+  surfaceContainerHigh: '#262b2c',
+  surfaceContainerHighest: '#2f3536',
+  outline: '#535b5c',
+  outlineVariant: '#343a3b',
+  onSurface: '#e2e5e5',
+  onSurfaceVariant: '#97a1a1',
+  primary: '#76e1c4', // M3 Mint / Sage accent from Serpantinum
+  onPrimary: '#00382d',
+  primaryContainer: '#0d4f40',
+  onPrimaryContainer: '#93fae0',
+  warning: '#f6b86f',
+  warningContainer: '#352516',
+  onWarningContainer: '#ffdcbb',
+  error: '#ffb4ab',
+  errorContainer: '#491b17',
+  onErrorContainer: '#ffdad6',
+};
 
 export default function App() {
   const [schedule, setSchedule] = useState(null);
@@ -67,7 +83,6 @@ export default function App() {
 
       const url = `https://edu.schools48.ru/apiv3/getdiary?student=${STUDENT_ID}&days=${dateStr}&rings=true&devkey=${DEV_KEY}&out_format=json&auth_token=${storedToken}&vendor=${VENDOR}`;
       
-      // Таймаут на 8 секунд для быстрого перехода в офлайн-режим при слабом интернете
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -85,17 +100,14 @@ export default function App() {
         throw new Error('Расписание не найдено на сервере');
       }
 
-      // Успешно получено по интернету
       setSchedule(days);
       setWeekInfo(infoStr);
       setIsOffline(false);
 
-      // Сохраняем ровно ОДНУ копию (перезаписываем прошлую)
+      // Сохраняем единственную копию в AsyncStorage
       const now = new Date();
       const pad = (n) => n.toString().padStart(2, '0');
       const timeStr = `${pad(now.getDate())}.${pad(now.getMonth() + 1)} в ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      
-      // Получаем чистый диапазон дат, например "07.09 - 11.09" или "18.05 - 22.05"
       const dateRangeLabel = infoStr.replace(/^(Расписание:\s*|Летний режим\s*\(архив за\s*)/i, '').replace(/\)$/, '');
 
       const cachePayload = {
@@ -107,9 +119,8 @@ export default function App() {
 
       await AsyncStorage.setItem('cached_schedule', JSON.stringify(cachePayload));
     } catch (err) {
-      console.log('Запрос не удался, попытка загрузить кеш:', err.message);
+      console.log('Сетевой запрос не удался, проверяем локальный архив:', err.message);
       
-      // Если интернет пропал — загружаем сохраненную копию
       try {
         const cachedRaw = await AsyncStorage.getItem('cached_schedule');
         if (cachedRaw) {
@@ -126,11 +137,18 @@ export default function App() {
           }
         }
       } catch (cacheErr) {
-        console.error('Ошибка чтения архива из памяти:', cacheErr);
+        console.error('Ошибка чтения архива:', cacheErr);
       }
 
-      // Если интернета нет И в памяти еще ничего не сохранено
-      setError(err.message || 'Нет подключения к интернету и нет сохраненного архива');
+      // Понятное объяснение ошибки
+      let friendlyError = err.message || 'Ошибка загрузки данных';
+      const msgLower = (err.message || '').toLowerCase();
+      if (msgLower.includes('unknownhostexception') || msgLower.includes('failed to fetch') || msgLower.includes('network request failed')) {
+        friendlyError = 'Не удалось связаться с сервером edu.schools48.ru.\n\nПроверьте подключение к интернету или отключите VPN / частный DNS в настройках телефона.';
+      } else if (msgLower.includes('certpathvalidatorexception') || msgLower.includes('sslhandshakeexception') || msgLower.includes('trust anchor')) {
+        friendlyError = 'Ошибка проверки сертификата безопасности сервера.\nВ обновленной версии сертификат уже встроен в приложение.';
+      }
+      setError(friendlyError);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -223,19 +241,19 @@ export default function App() {
     if (loading && !refreshing) {
       return (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={accent} />
-          <Text style={styles.loadingText}>Получение данных...</Text>
+          <ActivityIndicator size="large" color={m3.primary} />
+          <Text style={styles.loadingText}>Синхронизация с дневником...</Text>
         </View>
       );
     }
 
     if (error && !schedule) {
       return (
-        <View style={[styles.neuFlat, styles.errorBox]}>
-          <Text style={styles.errorText}>Ошибка при загрузке расписания.</Text>
-          <Text style={styles.errorSubText}>{error}</Text>
-          <TouchableOpacity style={[styles.neuFlat, styles.retryButton]} onPress={() => loadData(false)}>
-            <Text style={styles.retryButtonText}>Повторить попытку</Text>
+        <View style={styles.errorCard}>
+          <Text style={styles.errorTitle}>Нет связи с сервером</Text>
+          <Text style={styles.errorBody}>{error}</Text>
+          <TouchableOpacity style={styles.primaryPillBtn} onPress={() => loadData(false)}>
+            <Text style={styles.primaryPillBtnText}>Повторить попытку</Text>
           </TouchableOpacity>
         </View>
       );
@@ -245,10 +263,10 @@ export default function App() {
     
     if (dates.length === 0) {
       return (
-        <View style={[styles.neuFlat, styles.errorBox]}>
-          <Text style={styles.errorText}>Нет данных или расписание пусто.</Text>
-          <TouchableOpacity style={[styles.neuFlat, styles.retryButton]} onPress={() => loadData(false)}>
-            <Text style={styles.retryButtonText}>Обновить</Text>
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>Расписание на эти дни пусто</Text>
+          <TouchableOpacity style={styles.tonalPillBtn} onPress={() => loadData(false)}>
+            <Text style={styles.tonalPillBtnText}>Обновить</Text>
           </TouchableOpacity>
         </View>
       );
@@ -260,11 +278,19 @@ export default function App() {
       const lessonNums = Object.keys(items).sort((a,b) => parseInt(a) - parseInt(b));
 
       return (
-        <View key={dateKey} style={[styles.neuFlat, styles.dayCard]}>
-          <Text style={styles.dayTitle}>{dayData.title}</Text>
+        <View key={dateKey} style={styles.dayCard}>
+          {/* Day Header with Pill Tag */}
+          <View style={styles.dayHeaderRow}>
+            <Text style={styles.dayTitle}>{dayData.title}</Text>
+            <View style={styles.dayBadge}>
+              <Text style={styles.dayBadgeText}>{lessonNums.length} уроков</Text>
+            </View>
+          </View>
           
           {lessonNums.length === 0 ? (
-            <Text style={styles.noLessonsText}>Нет уроков</Text>
+            <View style={styles.noLessonsBox}>
+              <Text style={styles.noLessonsText}>Уроков нет</Text>
+            </View>
           ) : (
             lessonNums.map(num => {
               const lesson = items[num];
@@ -272,19 +298,34 @@ export default function App() {
               const hasHw = hws.some(hw => hw.value);
 
               return (
-                <View key={num} style={[styles.neuInset, styles.lessonItem]}>
-                  <View style={styles.lessonHeader}>
-                    <Text style={styles.lessonNum}>{lesson.num}</Text>
-                    <Text style={styles.lessonTime}>{lesson.starttime} - {lesson.endtime}</Text>
+                <View key={num} style={styles.lessonCard}>
+                  {/* Lesson Meta Bar */}
+                  <View style={styles.lessonMetaRow}>
+                    <View style={styles.numPill}>
+                      <Text style={styles.numPillText}>{lesson.num}</Text>
+                    </View>
+                    <View style={styles.timePill}>
+                      <Text style={styles.timePillText}>{lesson.starttime} – {lesson.endtime}</Text>
+                    </View>
                   </View>
+
+                  {/* Subject & Topic */}
                   <Text style={styles.lessonSubject}>{lesson.name}</Text>
-                  {lesson.topic ? <Text style={styles.lessonTopic}>{lesson.topic}</Text> : null}
+                  {lesson.topic ? (
+                    <Text style={styles.lessonTopic}>{lesson.topic}</Text>
+                  ) : null}
                   
+                  {/* Homework Box */}
                   {hasHw && (
-                    <View style={styles.homeworkBox}>
-                      <Text style={styles.homeworkTitle}>Домашнее задание</Text>
+                    <View style={styles.homeworkContainer}>
+                      <View style={styles.hwHeaderRow}>
+                        <View style={styles.hwDot} />
+                        <Text style={styles.homeworkLabel}>Домашнее задание</Text>
+                      </View>
                       {hws.map((hw, idx) => (
-                        hw.value ? <Text key={idx} style={styles.homeworkText}>{hw.value}</Text> : null
+                        hw.value ? (
+                          <Text key={idx} style={styles.homeworkValue}>{hw.value}</Text>
+                        ) : null
                       ))}
                     </View>
                   )}
@@ -299,7 +340,9 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      {/* Hidden Trigger Top Right */}
+      <StatusBar barStyle="light-content" backgroundColor={m3.surface} />
+      
+      {/* Hidden Dev Trigger Top Right */}
       <TouchableOpacity 
         style={styles.hiddenTrigger} 
         activeOpacity={1} 
@@ -313,85 +356,95 @@ export default function App() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[accent]}
-            tintColor={accent}
+            colors={[m3.primary]}
+            tintColor={m3.primary}
           />
         }
       >
-        <View style={[styles.neuFlat, styles.header]}>
-          <Text style={styles.headerTitle}>Дневник 5Б</Text>
-          <Text style={styles.headerSubtitle}>
-            {isOffline ? `⚠️ Архив за ${archiveInfo}` : weekInfo}
-          </Text>
+        {/* Material 3 Top App Shell Header */}
+        <View style={styles.appHeader}>
+          <Text style={styles.appTitle}>Дневник 5Б</Text>
+          <View style={styles.weekPill}>
+            <Text style={styles.weekPillText}>
+              {isOffline ? `⚠️ Архив за ${archiveInfo}` : weekInfo}
+            </Text>
+          </View>
         </View>
 
-        {/* Баннер офлайн-режима с указанием даты архива */}
+        {/* Material 3 Offline Warning Card */}
         {isOffline && (
-          <View style={[styles.neuFlat, styles.offlineBanner]}>
-            <Text style={styles.offlineIcon}>📡</Text>
-            <View style={styles.offlineTextContainer}>
-              <Text style={styles.offlineTitle}>Офлайн режим (нет интернета)</Text>
+          <View style={styles.offlineCard}>
+            <View style={styles.offlineTextWrapper}>
+              <View style={styles.offlineBadgeRow}>
+                <View style={styles.offlinePulseDot} />
+                <Text style={styles.offlineTag}>Офлайн режим</Text>
+              </View>
               <Text style={styles.offlineSubtitle}>
-                Это архив за {archiveInfo}
+                Показан архив за {archiveInfo}
               </Text>
               {archiveSavedTime ? (
-                <Text style={styles.offlineTime}>
+                <Text style={styles.offlineTimestamp}>
                   Сохранено: {archiveSavedTime}
                 </Text>
               ) : null}
             </View>
-            <TouchableOpacity 
-              style={[styles.neuFlat, styles.offlineRetryBtn]} 
-              onPress={() => loadData(false)}
-            >
-              <Text style={styles.offlineRetryText}>Повторить</Text>
+            <TouchableOpacity style={styles.tonalPillBtnSmall} onPress={() => loadData(false)}>
+              <Text style={styles.tonalPillBtnTextSmall}>Повторить</Text>
             </TouchableOpacity>
           </View>
         )}
 
+        {/* Schedule List */}
         {renderSchedule()}
         
       </ScrollView>
 
-      {/* Dev Menu Modal */}
+      {/* Dev Menu Modal (Material 3 Dialog) */}
       <Modal visible={devModalVisible} transparent={true} animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.neuFlat, styles.modalContent]}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.m3Dialog}>
             <TouchableOpacity 
-              style={styles.closeButton} 
+              style={styles.dialogCloseBtn} 
               onPress={() => setDevModalVisible(false)}
             >
-              <Text style={styles.closeButtonText}>✕</Text>
+              <Text style={styles.dialogCloseText}>✕</Text>
             </TouchableOpacity>
 
             {devStep === 1 ? (
-              <View>
-                <Text style={styles.devTitle}>Только для миши это меню разработчика введи пароль</Text>
+              <View style={styles.dialogContent}>
+                <Text style={styles.dialogHeadline}>Режим разработчика</Text>
+                <Text style={styles.dialogSupportingText}>
+                  Только для Миши. Введите системный пароль для управления авторизацией.
+                </Text>
                 <TextInput
-                  style={[styles.neuInset, styles.input]}
+                  style={styles.m3Input}
                   secureTextEntry
                   placeholder="Пароль"
-                  placeholderTextColor={textLight}
+                  placeholderTextColor={m3.outline}
                   value={password}
                   onChangeText={setPassword}
                 />
-                <TouchableOpacity style={[styles.neuFlat, styles.btn]} onPress={handleDevLogin}>
-                  <Text style={styles.btnText}>Войти</Text>
+                <TouchableOpacity style={styles.primaryPillBtn} onPress={handleDevLogin}>
+                  <Text style={styles.primaryPillBtnText}>Войти</Text>
                 </TouchableOpacity>
-                {devError ? <Text style={styles.errorMsg}>{devError}</Text> : null}
+                {devError ? <Text style={styles.dialogErrorText}>{devError}</Text> : null}
               </View>
             ) : (
-              <View>
-                <Text style={styles.devTitle}>Auth token</Text>
+              <View style={styles.dialogContent}>
+                <Text style={styles.dialogHeadline}>Токен авторизации</Text>
+                <Text style={styles.dialogSupportingText}>
+                  Введите новый auth_token школьного портала:
+                </Text>
                 <TextInput
-                  style={[styles.neuInset, styles.input]}
-                  placeholder="Токен"
-                  placeholderTextColor={textLight}
+                  style={[styles.m3Input, styles.m3InputMultiline]}
+                  multiline
+                  placeholder="Auth Token"
+                  placeholderTextColor={m3.outline}
                   value={tokenInput}
                   onChangeText={setTokenInput}
                 />
-                <TouchableOpacity style={[styles.neuFlat, styles.btn]} onPress={handleDevSaveToken}>
-                  <Text style={styles.btnText}>Отправить</Text>
+                <TouchableOpacity style={styles.primaryPillBtn} onPress={handleDevSaveToken}>
+                  <Text style={styles.primaryPillBtnText}>Сохранить и обновить</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -405,259 +458,380 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: bg,
+    backgroundColor: m3.surface,
   },
   scrollContent: {
-    padding: 24,
-    paddingTop: 60,
+    paddingHorizontal: 16,
+    paddingTop: 54,
     paddingBottom: 40,
   },
   hiddenTrigger: {
     position: 'absolute',
     top: 0,
     right: 0,
-    width: 80,
-    height: 80,
+    width: 72,
+    height: 72,
     zIndex: 100,
   },
-  
-  // Neumorphism Styles
-  neuFlat: {
-    backgroundColor: bg,
-    borderRadius: 16,
-    shadowColor: darkShadow,
-    shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 1,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  neuInset: {
-    backgroundColor: bg,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-    shadowColor: darkShadow,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
 
-  // Header
-  header: {
-    padding: 20,
+  // App Shell Header
+  appHeader: {
+    marginBottom: 24,
     alignItems: 'center',
-    marginBottom: 20,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: textDark,
-    marginBottom: 4,
+  appTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: m3.onSurface,
+    letterSpacing: -0.5,
+    marginBottom: 8,
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: textLight,
-    textAlign: 'center',
+  weekPill: {
+    backgroundColor: m3.surfaceContainerHigh,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: m3.outlineVariant,
+  },
+  weekPillText: {
+    fontSize: 12,
+    color: m3.onSurfaceVariant,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
 
-  // Offline Banner
-  offlineBanner: {
+  // Offline Card (Material 3 Banner)
+  offlineCard: {
+    backgroundColor: m3.warningContainer,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    borderLeftWidth: 4,
-    borderLeftColor: '#d67e2a',
+    borderWidth: 1,
+    borderColor: 'rgba(246, 184, 111, 0.25)',
   },
-  offlineIcon: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  offlineTextContainer: {
+  offlineTextWrapper: {
     flex: 1,
   },
-  offlineTitle: {
-    fontWeight: 'bold',
-    fontSize: 13,
-    color: '#d67e2a',
-    marginBottom: 2,
+  offlineBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  offlinePulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: m3.warning,
+    marginRight: 8,
+  },
+  offlineTag: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: m3.warning,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   offlineSubtitle: {
-    fontSize: 13,
-    color: textDark,
+    fontSize: 14,
     fontWeight: '600',
+    color: m3.onWarningContainer,
   },
-  offlineTime: {
+  offlineTimestamp: {
     fontSize: 11,
-    color: textLight,
+    color: m3.warning,
+    opacity: 0.8,
     marginTop: 2,
   },
-  offlineRetryBtn: {
+  tonalPillBtnSmall: {
+    backgroundColor: m3.surfaceContainerHighest,
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: m3.outlineVariant,
     marginLeft: 8,
   },
-  offlineRetryText: {
+  tonalPillBtnTextSmall: {
+    color: m3.onSurface,
     fontSize: 12,
-    fontWeight: 'bold',
-    color: accent,
+    fontWeight: '600',
   },
 
   // State Views
   centerContainer: {
-    padding: 40,
+    paddingVertical: 60,
     alignItems: 'center',
   },
   loadingText: {
     marginTop: 16,
-    color: textLight,
-    fontWeight: '600',
+    color: m3.onSurfaceVariant,
+    fontSize: 14,
+    fontWeight: '500',
   },
-  errorBox: {
+  errorCard: {
+    backgroundColor: m3.errorContainer,
+    borderRadius: 20,
     padding: 24,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 180, 171, 0.2)',
   },
-  errorText: {
-    color: '#e53e3e',
-    fontWeight: 'bold',
-    fontSize: 16,
+  errorTitle: {
+    color: m3.error,
+    fontSize: 18,
+    fontWeight: '700',
     marginBottom: 8,
-    textAlign: 'center',
   },
-  errorSubText: {
-    color: textLight,
+  errorBody: {
+    color: m3.onErrorContainer,
     fontSize: 13,
     textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  emptyCard: {
+    backgroundColor: m3.surfaceContainer,
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: m3.outlineVariant,
+  },
+  emptyText: {
+    color: m3.onSurfaceVariant,
+    fontSize: 15,
     marginBottom: 16,
   },
-  retryButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  retryButtonText: {
-    color: accent,
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
 
-  // Schedule
+  // Day Card (Material 3 Surface Container)
   dayCard: {
-    padding: 20,
-    marginBottom: 24,
+    backgroundColor: m3.surfaceContainer,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: m3.outlineVariant,
+  },
+  dayHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: m3.outlineVariant,
   },
   dayTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: textDark,
-    marginBottom: 16,
+    fontWeight: '700',
+    color: m3.onSurface,
+    letterSpacing: -0.3,
+  },
+  dayBadge: {
+    backgroundColor: m3.surfaceContainerHighest,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 9999,
+  },
+  dayBadgeText: {
+    fontSize: 11,
+    color: m3.primary,
+    fontWeight: '700',
+  },
+  noLessonsBox: {
+    paddingVertical: 16,
+    alignItems: 'center',
   },
   noLessonsText: {
-    color: textLight,
+    color: m3.onSurfaceVariant,
     fontStyle: 'italic',
-  },
-  lessonItem: {
-    padding: 16,
-    marginBottom: 16,
-  },
-  lessonHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(163, 177, 198, 0.3)',
-    paddingBottom: 8,
-    marginBottom: 8,
-  },
-  lessonNum: {
-    fontWeight: 'bold',
-    color: accent,
-    fontSize: 18,
-  },
-  lessonTime: {
-    fontSize: 12,
-    color: textLight,
-  },
-  lessonSubject: {
-    fontWeight: 'bold',
-    fontSize: 16,
-    color: textDark,
-    marginBottom: 4,
-  },
-  lessonTopic: {
-    fontSize: 14,
-    color: textLight,
-  },
-  homeworkBox: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    borderLeftWidth: 4,
-    borderLeftColor: accent,
-  },
-  homeworkTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: accent,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  homeworkText: {
-    fontSize: 14,
-    color: textDark,
-    lineHeight: 20,
+    fontSize: 13,
   },
 
-  // Modal
-  modalOverlay: {
+  // Lesson Card (Material 3 High Container)
+  lessonCard: {
+    backgroundColor: m3.surfaceContainerHigh,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  lessonMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  numPill: {
+    backgroundColor: m3.primaryContainer,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 9999,
+    marginRight: 8,
+  },
+  numPillText: {
+    color: m3.onPrimaryContainer,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  timePill: {
+    backgroundColor: m3.surfaceContainerHighest,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 9999,
+  },
+  timePillText: {
+    color: m3.onSurfaceVariant,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  lessonSubject: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: m3.onSurface,
+    marginBottom: 2,
+  },
+  lessonTopic: {
+    fontSize: 13,
+    color: m3.onSurfaceVariant,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+
+  // Homework Container
+  homeworkContainer: {
+    marginTop: 10,
+    backgroundColor: m3.surfaceContainerHighest,
+    borderRadius: 12,
+    padding: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: m3.primary,
+  },
+  hwHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  hwDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: m3.primary,
+    marginRight: 6,
+  },
+  homeworkLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: m3.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  homeworkValue: {
+    fontSize: 13,
+    color: m3.onSurface,
+    lineHeight: 19,
+    marginTop: 2,
+  },
+
+  // Material 3 Buttons
+  primaryPillBtn: {
+    backgroundColor: m3.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 9999,
+    alignItems: 'center',
+    width: '100%',
+  },
+  primaryPillBtnText: {
+    color: m3.onPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  tonalPillBtn: {
+    backgroundColor: m3.surfaceContainerHighest,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 9999,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: m3.outlineVariant,
+  },
+  tonalPillBtnText: {
+    color: m3.onSurface,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // Material 3 Dialog Modal
+  modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(224, 229, 236, 0.85)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
   },
-  modalContent: {
+  m3Dialog: {
+    backgroundColor: m3.surfaceContainerHigh,
+    borderRadius: 24,
+    padding: 24,
     width: '100%',
-    maxWidth: 360,
-    padding: 30,
-    alignItems: 'center',
+    maxWidth: 380,
+    borderWidth: 1,
+    borderColor: m3.outlineVariant,
   },
-  closeButton: {
+  dialogCloseBtn: {
     position: 'absolute',
-    top: 15,
-    right: 15,
-    padding: 5,
-  },
-  closeButtonText: {
-    fontSize: 20,
-    color: textLight,
-  },
-  devTitle: {
-    fontSize: 16,
-    color: textDark,
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 24,
-  },
-  input: {
-    width: '100%',
-    padding: 16,
-    color: textDark,
-    marginBottom: 24,
-    fontSize: 16,
-  },
-  btn: {
-    width: '100%',
-    padding: 16,
+    top: 18,
+    right: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: m3.surfaceContainerHighest,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  btnText: {
-    fontWeight: 'bold',
-    color: accent,
-    fontSize: 16,
+  dialogCloseText: {
+    color: m3.onSurfaceVariant,
+    fontSize: 14,
+    fontWeight: '700',
   },
-  errorMsg: {
-    color: '#e53e3e',
-    marginTop: 16,
+  dialogContent: {
+    marginTop: 8,
+  },
+  dialogHeadline: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: m3.onSurface,
+    marginBottom: 8,
+  },
+  dialogSupportingText: {
+    fontSize: 13,
+    color: m3.onSurfaceVariant,
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  m3Input: {
+    backgroundColor: m3.surfaceContainerHighest,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    color: m3.onSurface,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: m3.outlineVariant,
+    marginBottom: 20,
+  },
+  m3InputMultiline: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  dialogErrorText: {
+    color: m3.error,
+    fontSize: 12,
+    marginTop: 12,
     textAlign: 'center',
-  }
+  },
 });
