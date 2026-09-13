@@ -108,7 +108,7 @@ export default function App() {
       const now = new Date();
       const pad = (n) => n.toString().padStart(2, '0');
       const timeStr = `${pad(now.getDate())}.${pad(now.getMonth() + 1)} в ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      const dateRangeLabel = infoStr.replace(/^(Расписание:\s*|Летний режим\s*\(архив за\s*)/i, '').replace(/\)$/, '');
+      const dateRangeLabel = infoStr.replace(/^(Расписание:\s*|Следующая неделя:\s*|Летний режим\s*\(архив за\s*)/i, '').replace(/\)$/, '');
 
       const cachePayload = {
         days,
@@ -183,18 +183,36 @@ export default function App() {
       };
     }
 
-    const dayOfWeek = now.getDay(); 
-    const distanceToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - distanceToMonday);
-    
-    const friday = new Date(monday);
-    friday.setDate(monday.getDate() + 4);
+    const dayOfWeek = now.getDay(); // 0 = Воскресенье, 1 = Понедельник, ..., 5 = Пятница, 6 = Суббота
+    let targetMonday = new Date(now);
+    let isNextWeek = false;
 
+    // В пятницу, субботу и воскресенье учителя выставляют дз уже на следующую неделю
+    if (dayOfWeek === 5) {
+      // Пятница -> следующая неделя (+3 дня до ПН)
+      targetMonday.setDate(now.getDate() + 3);
+      isNextWeek = true;
+    } else if (dayOfWeek === 6) {
+      // Суббота -> следующая неделя (+2 дня до ПН)
+      targetMonday.setDate(now.getDate() + 2);
+      isNextWeek = true;
+    } else if (dayOfWeek === 0) {
+      // Воскресенье -> следующая неделя (+1 день до ПН)
+      targetMonday.setDate(now.getDate() + 1);
+      isNextWeek = true;
+    } else {
+      // Понедельник (1), Вторник (2), Среда (3), Четверг (4) -> текущая неделя
+      const distanceToMonday = dayOfWeek - 1;
+      targetMonday.setDate(now.getDate() - distanceToMonday);
+    }
+
+    const targetFriday = new Date(targetMonday);
+    targetFriday.setDate(targetMonday.getDate() + 4);
+
+    const prefix = isNextWeek ? 'Следующая неделя' : 'Расписание';
     return {
-      dateStr: `${formatDate(monday)}-${formatDate(friday)}`,
-      infoStr: `Расписание: ${monday.getDate()}.${monday.getMonth()+1} - ${friday.getDate()}.${friday.getMonth()+1}`
+      dateStr: `${formatDate(targetMonday)}-${formatDate(targetFriday)}`,
+      infoStr: `${prefix}: ${targetMonday.getDate()}.${targetMonday.getMonth()+1} - ${targetFriday.getDate()}.${targetFriday.getMonth()+1}`
     };
   };
 
